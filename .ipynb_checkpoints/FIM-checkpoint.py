@@ -66,6 +66,7 @@ class FIM(BaseSDE):
         # testing/loss customization ideas
         IH_dist = distributions.Normal(loc=torch.tensor(0).repeat(self.size, 1), scale=self.IH_std)
         self.prob_IH = IH_dist.log_prob(self.sample)
+        # update the variance as we move along the trajectory
         self.path_var = torch.exp(torch.tensor([[log_var]]))
         self.path_v0 = torch.exp(torch.tensor([[log_var]]))
         self.I = None
@@ -98,14 +99,14 @@ class FIM(BaseSDE):
         out = self.hurst_net(torch.cat([torch.sin(t), torch.cos(t), t], dim=-1))
         return out
     # @torch.no_grad
-    def update_var(self, t, h):
+    def update_var(self, t, h): # update variance wrt to hurst param
         var_0 = self.path_var
         self.path_v0 = var_0
         dt = self.dt
         var_new = var_0 * (dt ** (2*h))
         self.path_var = var_new
         
-    def resample(self, batch_size):
+    def resample(self, batch_size): # resample I_H for beginning of SDE
         eps = torch.randn(batch_size, 1).to(self.IH_logvar)
         self.sample = nn.Parameter((self.path_var**0.5) * eps, requires_grad = False)
         
@@ -115,8 +116,8 @@ class FIM(BaseSDE):
         h = self.hurst_net(torch.cat([torch.sin(t), torch.cos(t), t], dim=-1))
         I_H = self.sample
         out = torch.abs(I_H) ** (1 - 1/(2*h))
-        self.update_var(t, h.clone())
-        self.I = out.clone()
+        self.update_var(t, h.clone()) # clones bc I'm not sure how the back prop will work
+        self.I = out.clone() 
         # from latent sde
         sig = self.sigma.repeat(y.size(0), 1)
         return out * sig
@@ -140,7 +141,7 @@ class FIM(BaseSDE):
         dX_t = h(t, X_t)dt + \sigma(t, X_t)dB_t
         """
         std = self.path_std
-        h = self.theta * (self.mu - (y - self.path_v0))
+        h = self.theta * (self.mu - (y - self.path_v0)) # this is the thing that doesn't make sense but was working before
         return h
 
     def f_and_g_aug(self, t, y):
@@ -159,6 +160,7 @@ class FIM(BaseSDE):
         path_sd = (self.path_var) ** 0.5
         pseudo_prob = path_sd/(self.I*2)
         # g can be very small sometime so that the following is more numerically stable
+        # lot of loss testing going on here
         u = _stable_division(f - h, g, 1e-3)
         # u = f-h
         # u = _stable_division(f - h, self.sample, 1e-3)
