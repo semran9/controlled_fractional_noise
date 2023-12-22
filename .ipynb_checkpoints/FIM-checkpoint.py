@@ -29,8 +29,7 @@ class FIM(BaseSDE):
         sde_type="ito",
     ):
         super().__init__(noise_type, "ito")
-        # prior SDE - use this for y0 calculation (will need double integration?)
-        # SDE only relies on the probability distribution; do we need to add a control part to latent SDE?
+        # prior SDE
         self.register_buffer("theta", torch.tensor([[theta]]))
         self.register_buffer("mu", torch.tensor([[mu]]))
         self.register_buffer("sigma", torch.tensor([[sigma]]))
@@ -41,7 +40,6 @@ class FIM(BaseSDE):
         # dt
         self.dt = dt
         # posterior drift
-        # *integrate this to then change the h(t, X) function
         self.net = nn.Sequential(
             nn.Linear(3, 10), nn.ReLU(), nn.Linear(10, 10), nn.Sigmoid(), nn.Linear(10, 1)
         )
@@ -65,7 +63,7 @@ class FIM(BaseSDE):
         #self.IH_std = self.IH_var ** 0.5
         eps = torch.randn(self.size, 1).to(self.IH_logvar)
         self.sample = nn.Parameter(self.IH_std.repeat(self.size, 1) * eps, requires_grad = False)
-        
+        # testing/loss customization ideas
         IH_dist = distributions.Normal(loc=torch.tensor(0).repeat(self.size, 1), scale=self.IH_std)
         self.prob_IH = IH_dist.log_prob(self.sample)
         self.path_var = torch.exp(torch.tensor([[log_var]]))
